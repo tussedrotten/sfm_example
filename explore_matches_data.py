@@ -78,10 +78,6 @@ def draw_matches(img1, kp1, img2, kp2):
     fig.show()
 
 
-def main():
+if __name__ == '__main__':
     matched_frames, _ = read_dataset()
     visualize_covisibility(matched_frames)
-
-
-if __name__ == '__main__':
-    main()

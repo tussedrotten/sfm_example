@@ -17,10 +17,6 @@ def visualize_map(map, axis_size=1):
     o3d.visualization.draw_geometries([pcd] + axes)
 
 
-def main():
+if __name__ == '__main__':
     _, sfm_map = read_dataset()
     visualize_map(sfm_map, 25)
-
-
-if __name__ == '__main__':
-    main()

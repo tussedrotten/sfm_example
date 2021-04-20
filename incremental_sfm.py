@@ -9,6 +9,75 @@ from optimize import BatchBundleAdjustment, IncrementalBundleAdjustment
 """Assumes undistorted pixel points"""
 
 
+def interactive_isfm():
+    matched_frames, _ = read_dataset(shortest_track_length=3)
+
+    # Choose optimization method, BatchBundleAdjustment or IncrementalBundleAdjustment.
+    optimizer = BatchBundleAdjustment()
+
+    # Choose the two first frames for initialization
+    frame_0 = matched_frames[0]
+    frame_1 = matched_frames[1]
+
+    # Initialize map from two-view geometry.
+    sfm_map = initialize_map(frame_0, frame_1)
+
+    # You can here choose which images to add to the map in add_new_frame().
+    next_frames = matched_frames[2::]
+
+    # Callback for optimizing the map (press 'O')
+    def optimize(vis):
+        # Apply BA.
+        optimizer.full_bundle_adjustment_update(sfm_map)
+
+        vis.clear_geometries()
+        for geom in get_geometry():
+            vis.add_geometry(geom, reset_bounding_box=False)
+
+    # Callback for adding new frame to the map (press 'A')
+    def add_new_frame(vis):
+        if not next_frames:
+            return
+
+        # Get next frame
+        frame_new = next_frames.pop(0)
+        print("Adding frame " + str(frame_new.id()))
+
+        # Find 2d-3d correspondences with map and compute initial pose with respect to the map.
+        frame_map_corr, pose_w_new = track_map(sfm_map, frame_new)
+
+        # Insert frame as keyframe into the map
+        kf_new = add_as_keyframe_to_map(sfm_map, frame_new, pose_w_new, frame_map_corr)
+
+        # Find new correspondences, triangulate and add as map points.
+        find_and_add_new_map_points(sfm_map, kf_new)
+
+        vis.clear_geometries()
+        for geom in get_geometry():
+            vis.add_geometry(geom, reset_bounding_box=False)
+
+    # Helper function for extracting the visualization elements from the map.
+    def get_geometry():
+        poses = sfm_map.get_keyframe_poses()
+        p, c = sfm_map.get_pointcloud()
+
+        axes = []
+        for pose in poses:
+            axes.append(o3d.geometry.TriangleMesh.create_coordinate_frame(size=1.0).transform(pose.to_matrix()))
+
+        pcd = o3d.geometry.PointCloud()
+        pcd.points = o3d.utility.Vector3dVector(p.T)
+        pcd.colors = o3d.utility.Vector3dVector(c.T / 255)
+
+        return [pcd] + axes
+
+    # Create visualizer.
+    key_to_callback = {}
+    key_to_callback[ord("O")] = optimize
+    key_to_callback[ord("A")] = add_new_frame
+    o3d.visualization.draw_geometries_with_key_callbacks(get_geometry(), key_to_callback)
+
+
 def initialize_map(frame_0, frame_1):
     # Compute relative pose from two-view geometry.
     kp_0, id_0, kp_1, id_1 = frame_0.extract_correspondences_with_frame(frame_1)
@@ -122,75 +191,6 @@ def find_and_add_new_map_points(sfm_map, kf_new):
                     map_point.add_observation(sfm_map.get_keyframe(frame.id()), kp_id)
 
             sfm_map.add_map_point(map_point)
-
-
-def interactive_isfm():
-    matched_frames, _ = read_dataset(shortest_track_length=3)
-
-    # Choose optimization method, BatchBundleAdjustment or IncrementalBundleAdjustment.
-    optimizer = BatchBundleAdjustment()
-
-    # Choose the two first frames for initialization
-    frame_0 = matched_frames[0]
-    frame_1 = matched_frames[1]
-
-    # Initialize map from two-view geometry.
-    sfm_map = initialize_map(frame_0, frame_1)
-
-    # You can here choose which images to add to the map in add_new_frame().
-    next_frames = matched_frames[2::]
-
-    # Callback for optimizing the map (press 'O')
-    def optimize(vis):
-        # Apply BA.
-        optimizer.full_bundle_adjustment_update(sfm_map)
-
-        vis.clear_geometries()
-        for geom in get_geometry():
-            vis.add_geometry(geom, reset_bounding_box=False)
-
-    # Callback for adding new frame to the map (press 'A')
-    def add_new_frame(vis):
-        if not next_frames:
-            return
-
-        # Get next frame
-        frame_new = next_frames.pop(0)
-        print("Adding frame " + str(frame_new.id()))
-
-        # Find 2d-3d correspondences with map and compute initial pose with respect to the map.
-        frame_map_corr, pose_w_new = track_map(sfm_map, frame_new)
-
-        # Insert frame as keyframe into the map
-        kf_new = add_as_keyframe_to_map(sfm_map, frame_new, pose_w_new, frame_map_corr)
-
-        # Find new correspondences, triangulate and add as map points.
-        find_and_add_new_map_points(sfm_map, kf_new)
-
-        vis.clear_geometries()
-        for geom in get_geometry():
-            vis.add_geometry(geom, reset_bounding_box=False)
-
-    # Helper function for extracting the visualization elements from the map.
-    def get_geometry():
-        poses = sfm_map.get_keyframe_poses()
-        p, c = sfm_map.get_pointcloud()
-
-        axes = []
-        for pose in poses:
-            axes.append(o3d.geometry.TriangleMesh.create_coordinate_frame(size=1.0).transform(pose.to_matrix()))
-
-        pcd = o3d.geometry.PointCloud()
-        pcd.points = o3d.utility.Vector3dVector(p.T)
-        pcd.colors = o3d.utility.Vector3dVector(c.T / 255)
-
-        return [pcd] + axes
-
-    # Create visualizer.
-    key_to_callback = {}
-    key_to_callback[ord("O")] = optimize
-    key_to_callback[ord("A")] = add_new_frame
-    o3d.visualization.draw_geometries_with_key_callbacks(get_geometry(), key_to_callback)
 
 
 if __name__ == '__main__':
